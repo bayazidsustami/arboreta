@@ -1,0 +1,6 @@
+# Ignore API keys and local environment files
+.env
+__pycache__/
+*.txt
+!commit_msg.txt
+.venv
