@@ -42,3 +42,7 @@ jobs:
           commit_message: ${{ steps.commit_msg.outputs.message }}
           branch: main
           file_pattern: "generated_code/*"
+          commit_user_name: "Bayazid Sustami"
+          commit_user_email: "43400782+bayazidsustami@users.noreply.github.com"
+          commit_author: "Bayazid Sustami <43400782+bayazidsustami@users.noreply.github.com>"
+
