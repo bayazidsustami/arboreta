@@ -1,6 +1,7 @@
 import datetime
 import os
 import random
+import time
 
 from openai import OpenAI
 
@@ -16,31 +17,70 @@ if not api_key:
 client = OpenAI(api_key=api_key, base_url=base_url)
 
 
+def call_api_with_retry(messages, temperature=0.7, extra_headers=None, max_retries=3):
+    """Generic wrapper for OpenAI API calls with exponential backoff retries."""
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                temperature=temperature,
+                extra_headers=extra_headers,
+            )
+            if response and response.choices and len(response.choices) > 0:
+                return response
+
+            # If we get a response but it's empty/invalid, log and potentially retry
+            print(f"Attempt {attempt + 1}: Unexpected response structure: {response}")
+        except Exception as e:
+            print(f"Attempt {attempt + 1}: API call failed: {e}")
+
+        if attempt < max_retries - 1:
+            wait_time = (2**attempt) + random.random()
+            print(f"Retrying in {wait_time:.2f} seconds...")
+            time.sleep(wait_time)
+
+    return None
+
+
 def generate_dynamic_prompt():
     """Asks the AI to come up with a random programming challenge."""
-    try:
-        response = client.chat.completions.create(
-            extra_headers={
-                "HTTP-Referer": "https://github.com/bayazidsustami/arboreta",
-                "X-OpenRouter-Title": "Arboreta",
-            },
-            model=model_name,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a creative brainstorming assistant.",
-                },
-                {
-                    "role": "user",
-                    "content": "Give me a short, one-sentence description of a random, creative, or obscure programming task. It could be a specific algorithm, a tiny utility, a mathematical simulation, or a quirky text manipulation. Be specific but concise. Do not use markdown.",
-                },
-            ],
-            temperature=1.0,
+    recent_tasks = []
+    if os.path.exists("generated_code"):
+        files = sorted(os.listdir("generated_code"), reverse=True)[:5]
+        recent_tasks = [
+            f.split("_", 2)[-1].rsplit(".", 1)[0].replace("_", " ") for f in files
+        ]
+
+    context_msg = ""
+    if recent_tasks:
+        context_msg = (
+            f" Avoid tasks similar to these recent ones: {', '.join(recent_tasks)}."
         )
+
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a chaotic and imaginative software architect. You love esoteric programming, generative art, and quirky utilities.",
+        },
+        {
+            "role": "user",
+            "content": f"Generate a single, unique, and highly creative programming challenge that is unusual, artistic, or technically intriguing. Think about things like generative art, weird data visualizations, esoteric algorithms, or poetic code.{context_msg} Your response must be exactly one sentence, no markdown, no quotes.",
+        },
+    ]
+
+    extra_headers = {
+        "HTTP-Referer": "https://github.com/bayazidsustami/arboreta",
+        "X-OpenRouter-Title": "Arboreta",
+    }
+
+    response = call_api_with_retry(
+        messages, temperature=1.0, extra_headers=extra_headers
+    )
+    if response:
         return response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"Error generating meta-prompt: {e}")
-        return "Write a script that simulates a simple cellular automaton."
+
+    return "Write a script that simulates a simple cellular automaton."
 
 
 def generate_code(task):
@@ -68,49 +108,50 @@ def generate_code(task):
         "1. The code must be self-contained and runnable.\n"
         "2. Include brief comments explaining what it does.\n"
         "3. Return ONLY the raw code. DO NOT include markdown code blocks (like ```python ... ```).\n"
-        "4. No introductory or concluding text."
+        "4. No introductory or concluding text.\n"
+        "5. Make the implementation as elegant and creative as possible."
     )
 
-    try:
-        response = client.chat.completions.create(
-            extra_headers={
-                "HTTP-Referer": "https://github.com/bayazidsustami/arboreta",
-                "X-OpenRouter-Title": "Arboreta",
-            },
-            model=model_name,
-            messages=[
-                {"role": "system", "content": f"You are an expert {lang} programmer."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.7,
-        )
+    messages = [
+        {
+            "role": "system",
+            "content": f"You are an expert {lang} programmer with a flair for creative and efficient code.",
+        },
+        {"role": "user", "content": prompt},
+    ]
+
+    extra_headers = {
+        "HTTP-Referer": "https://github.com/bayazidsustami/arboreta",
+        "X-OpenRouter-Title": "Arboreta",
+    }
+
+    response = call_api_with_retry(
+        messages, temperature=1.0, extra_headers=extra_headers
+    )
+    if response:
         return lang, response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"Error generating code: {e}")
-        return None, None
+
+    return None, None
 
 
 def generate_commit_message(task, lang):
     """Generates a short, creative commit message."""
-    try:
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a git expert who writes concise, emoji-rich commit messages.",
-                },
-                {
-                    "role": "user",
-                    "content": f"Write a one-line git commit message for adding a {lang} script that solves: '{task}'. Use an emoji. No markdown.",
-                },
-            ],
-            temperature=0.8,
-        )
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a git expert who writes concise, emoji-rich commit messages.",
+        },
+        {
+            "role": "user",
+            "content": f"Write a one-line git commit message for adding a {lang} script that solves: '{task}'. Use an emoji. No markdown.",
+        },
+    ]
+
+    response = call_api_with_retry(messages, temperature=0.8)
+    if response:
         return response.choices[0].message.content.strip().replace('"', "")
-    except Exception as e:
-        print(f"Error generating commit message: {e}")
-        return f"feat: add {lang} snippet for {task[:20]}..."
+
+    return f"feat: add {lang} snippet for {task[:20]}..."
 
 
 def main():
@@ -121,7 +162,7 @@ def main():
     lang, code = generate_code(task)
     if not code:
         print("Failed to generate code.")
-        return
+        exit(1)
 
     commit_msg = generate_commit_message(task, lang)
     print(f"Suggested Commit Message: {commit_msg}")
