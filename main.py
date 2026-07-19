@@ -3,35 +3,39 @@ import os
 import random
 import time
 
-from openai import OpenAI
+from gemini_web2api.gemini import generate
 
-# Configure the API key from environment variables
-api_key = os.environ.get("OPENAI_API_KEY")
-base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-model_name = os.environ.get("OPENAI_MODEL_NAME", "gpt-4o-mini")
+class DummyMessage:
+    def __init__(self, content):
+        self.content = content
 
-if not api_key:
-    print("Error: OPENAI_API_KEY environment variable not set.")
-    exit(1)
+class DummyChoice:
+    def __init__(self, message):
+        self.message = message
 
-client = OpenAI(api_key=api_key, base_url=base_url)
-
+class DummyResponse:
+    def __init__(self, content):
+        self.choices = [DummyChoice(DummyMessage(content))]
 
 def call_api_with_retry(messages, temperature=0.7, extra_headers=None, max_retries=3):
-    """Generic wrapper for OpenAI API calls with exponential backoff retries."""
+    """Generic wrapper for Gemini API calls with exponential backoff retries."""
+    
+    # Convert messages list to a single prompt string
+    prompt = ""
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        prompt += f"{role.capitalize()}:\n{content}\n\n"
+        
     for attempt in range(max_retries):
         try:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                temperature=temperature,
-                extra_headers=extra_headers,
-            )
-            if response and response.choices and len(response.choices) > 0:
-                return response
+            # model_id=1 -> Gemini 1.5 Flash (default usually), model_id=2 -> Gemini 1.5 Pro
+            # temperature is not directly supported by web API wrapper in the same way, so we ignore it
+            content = generate(prompt, model_id=2, think_mode=0)
+            if content:
+                return DummyResponse(content)
 
-            # If we get a response but it's empty/invalid, log and potentially retry
-            print(f"Attempt {attempt + 1}: Unexpected response structure: {response}")
+            print(f"Attempt {attempt + 1}: Empty response from Gemini")
         except Exception as e:
             print(f"Attempt {attempt + 1}: API call failed: {e}")
 
@@ -41,7 +45,6 @@ def call_api_with_retry(messages, temperature=0.7, extra_headers=None, max_retri
             time.sleep(wait_time)
 
     return None
-
 
 def generate_dynamic_prompt():
     """Asks the AI to come up with a random programming challenge."""
@@ -69,14 +72,7 @@ def generate_dynamic_prompt():
         },
     ]
 
-    extra_headers = {
-        "HTTP-Referer": "https://github.com/bayazidsustami/arboreta",
-        "X-OpenRouter-Title": "Arboreta",
-    }
-
-    response = call_api_with_retry(
-        messages, temperature=1.0, extra_headers=extra_headers
-    )
+    response = call_api_with_retry(messages, temperature=1.0)
     if response:
         return response.choices[0].message.content.strip()
 
@@ -120,14 +116,7 @@ def generate_code(task):
         {"role": "user", "content": prompt},
     ]
 
-    extra_headers = {
-        "HTTP-Referer": "https://github.com/bayazidsustami/arboreta",
-        "X-OpenRouter-Title": "Arboreta",
-    }
-
-    response = call_api_with_retry(
-        messages, temperature=1.0, extra_headers=extra_headers
-    )
+    response = call_api_with_retry(messages, temperature=1.0)
     if response:
         return lang, response.choices[0].message.content.strip()
 
@@ -204,7 +193,6 @@ def main():
         f.write(commit_msg)
 
     print(f"Successfully generated {filename}")
-
 
 if __name__ == "__main__":
     main()

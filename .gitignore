@@ -4,3 +4,7 @@ __pycache__/
 *.txt
 !commit_msg.txt
 .venv
+
+# Gemini Web2API secrets
+cookie.txt
+config.json
