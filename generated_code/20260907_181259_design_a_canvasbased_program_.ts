@@ -1,0 +1,1 @@
+declaration:google:search{queries:[git commit history canvas tree visualizer html canvas typescript]}
